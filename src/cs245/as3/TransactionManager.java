@@ -6,10 +6,12 @@ import cs245.as3.interfaces.StorageManager.TaggedValue;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 
@@ -25,6 +27,7 @@ import java.util.stream.Collectors;
  * You can assume that the constructor and initAndRecover() are both called before any of the other methods.
  */
 public class TransactionManager {
+  private static final byte[] COMMIT_MESSAGE = "Commit".getBytes();
   private LogManager lm;
   private StorageManager sm;
   public static final char DELIMITER_CHAR = ',';
@@ -37,6 +40,42 @@ public class TransactionManager {
 
     public WritesetEntry(long key, byte[] value) {
       this.key = key;
+      this.value = value;
+    }
+  }
+
+  public class LogLineRecord {
+    long txID;
+    long key;
+    byte[] value;
+
+    public LogLineRecord(long txID, long key, byte[] value) {
+      this.txID = txID;
+      this.key = key;
+      this.value = value;
+    }
+
+    public long getTxID() {
+      return txID;
+    }
+
+    public void setTxID(long txID) {
+      this.txID = txID;
+    }
+
+    public long getKey() {
+      return key;
+    }
+
+    public void setKey(long key) {
+      this.key = key;
+    }
+
+    public byte[] getValue() {
+      return value;
+    }
+
+    public void setValue(byte[] value) {
       this.value = value;
     }
   }
@@ -64,6 +103,45 @@ public class TransactionManager {
     this.sm = sm;
     this.lm = lm;
     latestValues = sm.readStoredTable();
+    checkAndRecover();
+  }
+
+  private void checkAndRecover() {
+    int offset = 0;
+    List<LogLineRecord> recordList = new ArrayList<>();
+    Set<Long> commitedRecords = new HashSet<>();
+    while (offset < lm.getLogEndOffset()) {
+      byte[] logLineLengthByteArray = lm.readLogRecord(offset, Long.BYTES);
+      offset += Long.BYTES;
+      long length = getLongFromBytes(logLineLengthByteArray);
+      byte[] logLineByteArray = lm.readLogRecord(offset, (int) length);
+      LogLineRecord logLineRecord = deconstructLogLineToRecord(logLineByteArray);
+      handleRecords(logLineRecord, recordList, commitedRecords);
+      offset += length;
+    }
+    rewriteMissingRecords(recordList, commitedRecords);
+  }
+
+  private void handleRecords(LogLineRecord logLineRecord, List<LogLineRecord> recordList, Set<Long> commitedRecords) {
+    recordList.add(logLineRecord);
+    if (isCommitMessage(logLineRecord)) {
+      commitedRecords.add(logLineRecord.txID);
+    }
+  }
+
+  private boolean isCommitMessage(LogLineRecord logLineRecord) {
+    return logLineRecord.key == -1 && logLineRecord.getValue().toString().equals(COMMIT_MESSAGE);
+  }
+
+  private void rewriteMissingRecords(List<LogLineRecord> recordList, Set<Long> commitedRecords) {
+    for (LogLineRecord record : recordList) {
+      if (!commitedRecords.contains(record.getTxID()) && !isCommitMessage(record)) {
+        //write it to the storage manager
+        long tag = 0;
+        latestValues.put(record.key, new TaggedValue(tag, record.value));
+        sm.queueWrite(record.key,0,record.value);
+      }
+    }
   }
 
   /**
@@ -97,13 +175,30 @@ public class TransactionManager {
   }
 
   private void addCommitMessage(long txID, ArrayList<WritesetEntry> writeset) {
-
+    writeset.add(new WritesetEntry(EMPTY_LONG, COMMIT_MESSAGE));
   }
 
   private void writeToLogManager(long txID, ArrayList<WritesetEntry> writeset) {
     List<byte[]> logLines =
-        writeset.stream().map(w -> createLogLine(txID, w.key, w.value)).collect(Collectors.toList());
-    logLines.forEach(b -> lm.appendLogRecord(b));
+        writeset.stream().map(w -> createLogLineWithRecord(txID, w.key, w.value)).collect(Collectors.toList());
+    logLines.forEach(b -> {
+      byte[] logLineLength = getByteFromLong(b.length);
+      lm.appendLogRecord(logLineLength);
+      lm.appendLogRecord(b);
+    });
+  }
+
+  private byte[] getByteFromLong(long length) {
+    ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
+    buffer.putLong(length);
+    return buffer.array();
+  }
+
+  public long getLongFromBytes(byte[] bytes) {
+    ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES);
+    buffer.put(bytes);
+    buffer.flip();//need flip
+    return buffer.getLong();
   }
 
   /**
@@ -112,10 +207,14 @@ public class TransactionManager {
   public void commit(long txID) {
     ArrayList<WritesetEntry> writeset = writesets.get(txID);
     if (writeset != null) {
+      addCommitMessage(txID, writeset);
+      writeToLogManager(txID, writeset);
       for (WritesetEntry x : writeset) {
         //tag is unused in this implementation:
         long tag = 0;
-        latestValues.put(x.key, new TaggedValue(tag, x.value));
+        if (x.key >= 0) {
+          latestValues.put(x.key, new TaggedValue(tag, x.value));
+        }
       }
       writesets.remove(txID);
     }
@@ -133,18 +232,36 @@ public class TransactionManager {
    * These calls are in order of writes to a key and will occur once for every such queued write, unless a crash occurs.
    */
   public void writePersisted(long key, long persisted_tag, byte[] persisted_value) {
+    sm.queueWrite(key, persisted_tag, persisted_value);
   }
 
-  public byte[] createLogLine(long txID, long key, byte[] value) {
-    StringBuilder sb = new StringBuilder();
-    sb.append(Long.toString(txID));
-    sb.append(DELIMITER_CHAR);
-    sb.append(Long.toString(key));
-    sb.append(DELIMITER_CHAR);
+//  public byte[] createLogLine(long txID, long key, byte[] value) {
+//    StringBuilder sb = new StringBuilder();
+//    sb.append(Long.toString(txID));
+//    sb.append(DELIMITER_CHAR);
+//    sb.append(Long.toString(key));
+//    sb.append(DELIMITER_CHAR);
+//    ByteArrayOutputStream stream = new ByteArrayOutputStream();
+//    DataOutputStream dOS = new DataOutputStream(stream);
+//    try {
+//      dOS.write(sb.toString().getBytes());
+//      dOS.write(value);
+//      dOS.write(DELIMITER_STRING.getBytes());
+//      dOS.close();
+//    } catch (IOException e) {
+//      e.printStackTrace();
+//    }
+//    return stream.toByteArray();
+//  }
+
+  public byte[] createLogLineWithRecord(long txID, long key, byte[] value) {
     ByteArrayOutputStream stream = new ByteArrayOutputStream();
     DataOutputStream dOS = new DataOutputStream(stream);
     try {
-      dOS.write(sb.toString().getBytes());
+      byte[] txIDArray = getByteFromLong(txID);
+      dOS.write(txIDArray);
+      byte[] keyArray = getByteFromLong(key);
+      dOS.write(keyArray);
       dOS.write(value);
       dOS.close();
     } catch (IOException e) {
@@ -153,13 +270,46 @@ public class TransactionManager {
     return stream.toByteArray();
   }
 
-  public List<String> deconstructLogLine(byte[] bytes) {
-    String logLine = new String(bytes);
-    String[] split = logLine.split(DELIMITER_STRING);
-    List<String> list = Arrays.asList(split);
-    return list;
+//  public List<String> deconstructLogLine(byte[] bytes) {
+//    String logLine = new String(bytes);
+//    String[] split = logLine.split(DELIMITER_STRING);
+//    List<String> list = Arrays.asList(split);
+//    return list;
+//  }
+
+  public LogLineRecord deconstructLogLineToRecord(byte[] bytes) {
+
+    ByteBuffer byteBuffer = ByteBuffer.wrap(bytes);
+    long txID = byteBuffer.getLong();
+    long key = byteBuffer.getLong();
+    byte[] value = new byte[byteBuffer.remaining()];
+    byteBuffer.get(value);
+    LogLineRecord record = new LogLineRecord(txID, key, value);
+    return record;
   }
 
+//  public LogLineRecord deconstructLogLineToRecord(byte[] bytes) {
+//    ByteArrayInputStream bis = new ByteArrayInputStream(bytes);
+//    ObjectInput in = null;
+//    LogLineRecord record = null;
+//    try {
+//      in = new ObjectInputStream(bis);
+//      record = (LogLineRecord) in.readObject();
+//    } catch (IOException e) {
+//      e.printStackTrace();
+//    } catch (ClassNotFoundException e) {
+//      e.printStackTrace();
+//    } finally {
+//      try {
+//        if (in != null) {
+//          in.close();
+//        }
+//      } catch (IOException ex) {
+//        // ignore close exception
+//      }
+//      return record;
+//    }
+//  }
 //  public String createLogLine(List<String> logLineList) {
 //    StringBuilder stringBuilder = new StringBuilder();
 //    logLineList.stream().forEach(l -> {
