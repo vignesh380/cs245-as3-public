@@ -235,25 +235,6 @@ public class TransactionManager {
     sm.queueWrite(key, persisted_tag, persisted_value);
   }
 
-//  public byte[] createLogLine(long txID, long key, byte[] value) {
-//    StringBuilder sb = new StringBuilder();
-//    sb.append(Long.toString(txID));
-//    sb.append(DELIMITER_CHAR);
-//    sb.append(Long.toString(key));
-//    sb.append(DELIMITER_CHAR);
-//    ByteArrayOutputStream stream = new ByteArrayOutputStream();
-//    DataOutputStream dOS = new DataOutputStream(stream);
-//    try {
-//      dOS.write(sb.toString().getBytes());
-//      dOS.write(value);
-//      dOS.write(DELIMITER_STRING.getBytes());
-//      dOS.close();
-//    } catch (IOException e) {
-//      e.printStackTrace();
-//    }
-//    return stream.toByteArray();
-//  }
-
   public byte[] createLogLineWithRecord(long txID, long key, byte[] value) {
     ByteArrayOutputStream stream = new ByteArrayOutputStream();
     DataOutputStream dOS = new DataOutputStream(stream);
@@ -270,13 +251,6 @@ public class TransactionManager {
     return stream.toByteArray();
   }
 
-//  public List<String> deconstructLogLine(byte[] bytes) {
-//    String logLine = new String(bytes);
-//    String[] split = logLine.split(DELIMITER_STRING);
-//    List<String> list = Arrays.asList(split);
-//    return list;
-//  }
-
   public LogLineRecord deconstructLogLineToRecord(byte[] bytes) {
 
     ByteBuffer byteBuffer = ByteBuffer.wrap(bytes);
@@ -287,49 +261,4 @@ public class TransactionManager {
     LogLineRecord record = new LogLineRecord(txID, key, value);
     return record;
   }
-
-//  public LogLineRecord deconstructLogLineToRecord(byte[] bytes) {
-//    ByteArrayInputStream bis = new ByteArrayInputStream(bytes);
-//    ObjectInput in = null;
-//    LogLineRecord record = null;
-//    try {
-//      in = new ObjectInputStream(bis);
-//      record = (LogLineRecord) in.readObject();
-//    } catch (IOException e) {
-//      e.printStackTrace();
-//    } catch (ClassNotFoundException e) {
-//      e.printStackTrace();
-//    } finally {
-//      try {
-//        if (in != null) {
-//          in.close();
-//        }
-//      } catch (IOException ex) {
-//        // ignore close exception
-//      }
-//      return record;
-//    }
-//  }
-//  public String createLogLine(List<String> logLineList) {
-//    StringBuilder stringBuilder = new StringBuilder();
-//    logLineList.stream().forEach(l -> {
-//      stringBuilder.append(l);
-//      stringBuilder.append(DELIMITER_STRING);
-//    });
-//    return stringBuilder.toString();
-//  }
-
-//  public List<String> deconstructLogLine(String s) {
-//    String[] split = s.split(DELIMITER_STRING);
-//    List<String> list = Arrays.asList(split);
-//    return list;
-//  }
-
-//  public byte[] stringToByte(String string) {
-//    return string.getBytes();
-//  }
-//
-//  public String bytesToString(byte[] bytes) {
-//    return new String(bytes);
-//  }
 }
