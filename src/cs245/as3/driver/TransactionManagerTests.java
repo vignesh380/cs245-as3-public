@@ -2,6 +2,7 @@ package cs245.as3.driver;
 
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map.Entry;
 import java.util.Random;
 
@@ -18,16 +19,16 @@ import cs245.as3.driver.LogManagerImpl.CrashException;
  * DO NOT MODIFY THIS FILE IN THIS PACKAGE **
  */
 public class TransactionManagerTests {
-	
+
 	//Test seeds will be modified by the autograder
     protected static long[] TEST_SEEDS = new long[] {0x12345671234567L, 0x1000, 42, 9};
-    
+
 	@Rule
     public Timeout globalTimeout = Timeout.seconds(60);
-	
+
 	public void TestTransactionTemplate(boolean check_recovery) {
     	int errors = 0;
-    	
+
 		LogManagerImpl lm = new LogManagerImpl();
 		StorageManagerImpl sm = new StorageManagerImpl();
 		//Simulate a storage manager that doesn't persist writes to a particular key
@@ -39,7 +40,7 @@ public class TransactionManagerTests {
 			sm.in_recovery = true;
 			tm.initAndRecover(sm, lm);
 			sm.in_recovery = false;
-			
+
 			long txID = 1;
 			tm.start(txID);
 			long key = 10;
@@ -80,19 +81,19 @@ public class TransactionManagerTests {
 		}
 		assert(errors == 0);
 	}
-	
+
 	@Test
     @GradedTest(name="TestTransaction", number="1", points=0)
     public void TestTransaction() {
 		TestTransactionTemplate(false);
 	}
-	
+
     @Test
     @GradedTest(name="TestRecovery", number="2", points=3.0)
     public void TestRecovery() {
     	TestTransactionTemplate(true);
     }
-    
+
     public void TestTransaction2Template(boolean check_recovery) {
 		LogManagerImpl lm = new LogManagerImpl();
 		StorageManagerImpl sm = new StorageManagerImpl();
@@ -102,7 +103,7 @@ public class TransactionManagerTests {
 		tm.initAndRecover(sm, lm);
 		sm.in_recovery = false;
 
-		int nTXNs = 1000;    	
+		int nTXNs = 1000;
     	for(int i = 0; i < nTXNs; i+=2) {
     		long TXid1 = i;
     		long TXid2 = i + 1;
@@ -144,7 +145,7 @@ public class TransactionManagerTests {
     	}
     	if (check_recovery) {
 	    	sm.crash();
-	
+
 			tm = new TransactionManager();
 			sm.in_recovery = true;
 			tm.initAndRecover(sm, lm);
@@ -168,13 +169,13 @@ public class TransactionManagerTests {
     public void TestTransaction2() {
 		TestTransaction2Template(false);
 	}
-	
+
     @Test
     @GradedTest(name="TestRecovery2", number="2", points=3.0)
     public void TestRecovery2() {
     	TestTransaction2Template(true);
     }
-    
+
     public void TestBigWriteTemplate(final Random seeds, boolean check_recovery) {
 		LogManagerImpl lm = new LogManagerImpl();
 		StorageManagerImpl sm = new StorageManagerImpl();
@@ -186,14 +187,14 @@ public class TransactionManagerTests {
 
 		Random r = new Random(seeds.nextLong());
 
-		int nTXNs = 1000;    	
+		int nTXNs = 1000;
     	for(int i = 0; i < nTXNs; i+=2) {
     		long TXid1 = i;
     		long TXid2 = i + 1;
     		tm.start(TXid1);
     		byte[] value = new byte[100];
     		r.nextBytes(value);
-    		
+
     		tm.write(TXid1, i, value);
     		tm.start(TXid2);
     		{
@@ -228,7 +229,7 @@ public class TransactionManagerTests {
     	}
     	if (check_recovery) {
 	    	sm.crash();
-	
+
 			tm = new TransactionManager();
 			sm.in_recovery = true;
 			tm.initAndRecover(sm, lm);
@@ -252,7 +253,7 @@ public class TransactionManagerTests {
 		TestBigWriteTemplate(seeds, false);
 		TestBigWriteTemplate(seeds, false);
 	}
-	
+
     @Test
     @GradedTest(name="TestBigWriteRecovery", number="2", points=3.0)
     public void TestBigRecovery() {
@@ -261,7 +262,7 @@ public class TransactionManagerTests {
     	TestBigWriteTemplate(seeds, true);
     	TestBigWriteTemplate(seeds, true);
     }
-    
+
     /**
       * Test that the transaction manager is doing something smart with log truncation
       */
@@ -275,13 +276,13 @@ public class TransactionManagerTests {
 		sm.in_recovery = true;
 		tm.initAndRecover(sm, lm);
 		sm.in_recovery = false;
-		
+
 		Random r = new Random(TEST_SEEDS[0]);
 
 		int key = r.nextInt(100);
-		
+
 		int maxLogSizeUntruncated = 0;
-		
+
 		int nTXNs = 990000 + r.nextInt(10000);
     	for(int i = 0; i < nTXNs + 1; i++) {
     		long TXid = i;
@@ -301,7 +302,7 @@ public class TransactionManagerTests {
 			maxLogSizeUntruncated = Math.max(maxLogSizeUntruncated,  lm.getLogEndOffset() - lm.getLogTruncationOffset());
     	}
     	sm.crash();
-    	
+
     	//Measure IOPs during recovery
     	tm = new TransactionManager();
     	int iopCount_now = lm.getIOPCount();
@@ -312,7 +313,7 @@ public class TransactionManagerTests {
     	int iopCount_delta = lm.getIOPCount() - iopCount_now;
 		System.out.printf("Recovery used %d iops on the log.\n", iopCount_delta);
 		System.out.printf("Maximum log size reached during workload: %d\n", maxLogSizeUntruncated);
-		
+
 		//Measure correctness of recovery:
 		long TXidForRead = nTXNs + 10;
 		byte[] value = tm.read(TXidForRead, key);
@@ -322,13 +323,13 @@ public class TransactionManagerTests {
 		String svalue = new String(value);
 		long lvalue = Long.parseLong(svalue.split(" ")[1]);
 		assert(lvalue == nTXNs - 1);
-		
+
 		//Test fails if recovery used too many log iops:
 		assert(iopCount_delta < 1000);
 		//... or if the log ever became too long:
 		assert(maxLogSizeUntruncated < 50000);
 	}
-    
+
     /**
      * A slightly more complicated workflow with interleaved txns and big writes, where we also test recovery performance.
      */
@@ -342,11 +343,11 @@ public class TransactionManagerTests {
 		sm.in_recovery = true;
 		tm.initAndRecover(sm, lm);
 		sm.in_recovery = false;
-		
+
 		Random r = new Random(TEST_SEEDS[1]);
 
 		int maxLogSizeUntruncated = 0;
-		
+
 		int nTXNs = 99000 + r.nextInt(1000);
 		long lastSuccessfulKey = 0;
 		byte[] lastSuccessfulValue = null;
@@ -398,14 +399,14 @@ public class TransactionManagerTests {
 	   		}
 			//See how big the log is now:
 			maxLogSizeUntruncated = Math.max(maxLogSizeUntruncated,  lm.getLogEndOffset() - lm.getLogTruncationOffset());
-			
+
 			//Advance
 		   	i += nToInterleave;
 	   	}
-	   	
+
 	   	sm.crash();
 	   	lm.resumeServingRequests();
-   	
+
 	   	//Measure IOPs during recovery
 	   	tm = new TransactionManager();
 	   	int iopCount_now = lm.getIOPCount();
@@ -416,7 +417,7 @@ public class TransactionManagerTests {
 		int iopCount_delta = lm.getIOPCount() - iopCount_now;
 		System.out.printf("Recovery used %d iops on the log.\n", iopCount_delta);
 		System.out.printf("Maximum log size reached during workload: %d\n", maxLogSizeUntruncated);
-		
+
 		//Measure correctness of recovery:
 		long TXidForRead = nTXNs + 10;
 		byte[] value = tm.read(TXidForRead, lastSuccessfulKey);
@@ -424,13 +425,13 @@ public class TransactionManagerTests {
 		byte[] sm_value = sm.readLatestValue(lastSuccessfulKey);
 		assert(Arrays.equals(sm_value, value));
 		assert(Arrays.equals(value,  lastSuccessfulValue));
-		
+
 		//Test fails if recovery used too many log iops:
 		assert(iopCount_delta < 500);
 		//... or if the log ever became too long:
 		assert(maxLogSizeUntruncated < 30000);
 	}
-   
+
     public void TestRepeatedFailuresTemplate(final Random seeds, double failureRate) {
 		LogManagerImpl lm = new LogManagerImpl();
 		StorageManagerImpl sm = new StorageManagerImpl();
@@ -439,12 +440,12 @@ public class TransactionManagerTests {
 		sm.in_recovery = true;
 		tm.initAndRecover(sm, lm);
 		sm.in_recovery = false;
-		
+
 		Random r = new Random(seeds.nextLong());
 
 		//Track what the correct values are for each key across crashes for testing purposes:
 		HashMap<Long, byte[]> lastCommittedValues = new HashMap();
-		
+
 		//Really stress recovery after repeated crashes. We make sure to succeed at least the first time.
 		//By selecting these keys to be persisted, we ensure we always have to replay the whole log,
 		//while also testing commits that don't handle some keys but not others being persisted.
@@ -494,7 +495,7 @@ public class TransactionManagerTests {
 				sm.in_recovery = true;
 				numCrashes++;
 			}
-			//Check that the TransactionManager and StorageManager both match 
+			//Check that the TransactionManager and StorageManager both match
 			//the values in lastCommittedValues
 			long TXidforRead = trial * 2 + 1;
 			tm.start(TXidforRead);
@@ -517,7 +518,7 @@ public class TransactionManagerTests {
 			tm.abort(TXidforRead);
 		}
 	}
-    
+
     /**
       * Test that the transaction manager is doing something smart with log truncation
       */
@@ -529,7 +530,7 @@ public class TransactionManagerTests {
     		TestRepeatedFailuresTemplate(seeds, 0.1);
     	}
     }
-    
+
     /**
       * Test with even more failures.
       */
@@ -541,4 +542,44 @@ public class TransactionManagerTests {
     		TestRepeatedFailuresTemplate(seeds, 0.5);
     	}
     }
+
+	/**
+	 * Test write of the log serializer
+	 */
+	@Test
+	public void TestLogWriterSerializer() {
+		LogManagerImpl lm = new LogManagerImpl();
+		StorageManagerImpl sm = new StorageManagerImpl();
+		sm.in_recovery = true;
+		TransactionManager tm = new TransactionManager();
+		tm.initAndRecover(sm, lm);
+
+		byte[] logLine = tm.createLogLine(123l, 1l, "string".getBytes());
+		String constructedString = new String(logLine);
+		List<String> list = tm.deconstructLogLine(logLine);
+		StringBuilder sb = new StringBuilder();
+		list.stream().forEach(l-> {
+			sb.append(l);
+			sb.append(TransactionManager.DELIMITER_CHAR);
+		});
+		String logLineFromDeconstructed = sb.substring(0,sb.length()-1);
+		assert(constructedString.equals(logLineFromDeconstructed));
+		assert(Long.valueOf(list.get(0)) == 123l);
+		assert(Long.valueOf(list.get(1)) == 1l);
+		assert(list.get(2).equals("string"));
+	}
+
+//	/**
+//	 * Test write of the log serializer
+//	 */
+//	@Test
+//	public void TestLogReaderSerializer() {
+//		LogManagerImpl lm = new LogManagerImpl();
+//		StorageManagerImpl sm = new StorageManagerImpl();
+//		sm.in_recovery = true;
+//		TransactionManager tm = new TransactionManager();
+//		tm.initAndRecover(sm, lm);
+//		List<String> logLine = tm.deconstructLogLine("this,was,a,test,");
+//		assert(logLine.size() == 4);
+//	}
 }
