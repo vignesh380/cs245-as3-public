@@ -111,8 +111,6 @@ public class TransactionManager {
    */
   public void commit(long txID) {
     ArrayList<WritesetEntry> writeset = writesets.get(txID);
-    addCommitMessage(txID,writeset);
-    writeToLogManager(txID, writeset);
     if (writeset != null) {
       for (WritesetEntry x : writeset) {
         //tag is unused in this implementation:
